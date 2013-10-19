@@ -18,9 +18,8 @@
 
 (defn get-uvec
   [^UserEventDAO udao ^long user]
-  (if-let [history (.getEventsForUser udao user Rating)]
-    (RatingVectorUserHistorySummarizer/makeRatingVector history)
-    (History/forUser user)))
+  (->> (or (.getEventsForUser udao user Rating) (History/forUser user))
+       (RatingVectorUserHistorySummarizer/makeRatingVector)))
 
 (defprovider suu-item-scorer
   ^ItemScorer [^UserEventDAO udao ^ItemEventDAO idao]
