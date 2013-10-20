@@ -18,24 +18,44 @@
            [recsys.dao ItemTitleDAO MOOCRatingDAO MOOCItemDAO MOOCUserDAO]
            [recsys.dao RatingFile TitleFile UserFile]))
 
+(def ^:const knn-k
+  "The number of nearest neighbors to use in user-user scoring."
+  30)
+
 (defn get-uvec
   "Retrieve rating vector of all items for `user` from `udao`."
   [^UserEventDAO udao ^long user]
   (->> (or (.getEventsForUser udao user Rating) (History/forUser user))
        (RatingVectorUserHistorySummarizer/makeRatingVector)))
 
+(defn mean-center
+  "Mean-center vector `v`."
+  ^SparseVector [^SparseVector v]
+  (-> v lkv/mvec (lkv/-! (.mean v)) lkv/freeze!))
+
 (defprovider suu-item-scorer
   "Simple user-user item score implementation."
   ^ItemScorer [^UserEventDAO udao ^ItemEventDAO idao]
   (lkc/item-scorer
    (fn score [^long user ^MutableSparseVector scores]
-     (let [uvec (get-uvec udao user)]
-       ;; TODO Score items for this user using user-user collaborative
-       ;;      filtering
+     (let [uvec (get-uvec udao user), umean (.mean ^SparseVector uvec),
+           uvec (mean-center uvec), vs (CosineVectorSimilarity.)]
        (lkv/map-keys!
-        (fn [item]
-          ;; This is the function to iterate over items to score
-          0.0)
+        (fn [^long item]
+          (->> (.getUsersForItem idao item)
+               (remove (partial = user))
+               (map (fn [^long user']
+                      (let [uvec' (mean-center (get-uvec udao user'))
+                            sim (.similarity vs uvec uvec')]
+                        [sim uvec'])))
+               (sort-by first >)
+               (take knn-k)
+               (reduce (fn [[s w] [^double sim ^SparseVector uvec']]
+                         [(+ s (* sim (.get uvec' item)))
+                          (+ w (Math/abs sim))])
+                       [0.0 0.0])
+               (apply /)
+               (+ umean)))
         :either scores)))))
 
 (defn configure-recommender
