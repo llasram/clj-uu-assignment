@@ -4,7 +4,8 @@
             [clojure.tools.logging :as log]
             [parenskit (vector :as lkv) (core :as lkc)]
             [esfj.provider :refer [defprovider]])
-  (:import [java.util Collection]
+  (:import [java.util Collection Map Set]
+           [com.google.common.collect Maps Sets]
            [org.grouplens.lenskit ItemScorer]
            [org.grouplens.lenskit.data.dao EventDAO ItemDAO UserDAO]
            [org.grouplens.lenskit.data.dao UserEventDAO ItemEventDAO]
@@ -47,10 +48,13 @@
 
 (defn parse-args
   [args]
-  (reduce (fn [to-score arg]
+  (reduce (fn [^Map to-score arg]
             (let [[uid iid] (map #(Long/parseLong %) (str/split arg #":"))]
-              (update-in to-score [uid] (fnil conj #{}) iid)))
-          {} args))
+              (when-not (.containsKey to-score uid)
+                (.put to-score uid (Sets/newHashSet)))
+              (-> to-score ^Set (.get uid) (.add iid))
+              to-score))
+          (Maps/newHashMap) args))
 
 (defn -main
   [& args]
