@@ -14,6 +14,7 @@
              History RatingVectorUserHistorySummarizer UserHistory]
            [org.grouplens.lenskit.vectors SparseVector]
            [org.grouplens.lenskit.vectors MutableSparseVector]
+           [org.grouplens.lenskit.vectors.similarity CosineVectorSimilarity]
            [recsys.dao ItemTitleDAO MOOCRatingDAO MOOCItemDAO MOOCUserDAO]
            [recsys.dao RatingFile TitleFile UserFile]))
 
