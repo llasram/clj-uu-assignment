@@ -18,11 +18,13 @@
            [recsys.dao RatingFile TitleFile UserFile]))
 
 (defn get-uvec
+  "Retrieve rating vector of all items for `user` from `udao`."
   [^UserEventDAO udao ^long user]
   (->> (or (.getEventsForUser udao user Rating) (History/forUser user))
        (RatingVectorUserHistorySummarizer/makeRatingVector)))
 
 (defprovider suu-item-scorer
+  "Simple user-user item score implementation."
   ^ItemScorer [^UserEventDAO udao ^ItemEventDAO idao]
   (lkc/item-scorer
    (fn score [^long user ^MutableSparseVector scores]
@@ -36,6 +38,7 @@
         :either scores)))))
 
 (defn configure-recommender
+  "Create the LensKit recommender configuration."
   []
   (doto (lkc/config)
     (-> (.bind EventDAO) (.to MOOCRatingDAO))
@@ -47,6 +50,8 @@
     (-> (.bind ItemScorer) (.toProvider suu-item-scorer))))
 
 (defn parse-args
+  "Parse the command-line arguments in sequence `args`.  Use Java collections
+to keep output order consistent with Java implementation."
   [args]
   (reduce (fn [^Map to-score arg]
             (let [[uid iid] (map #(Long/parseLong %) (str/split arg #":"))]
@@ -57,6 +62,7 @@
           (Maps/newHashMap) args))
 
 (defn -main
+  "Main entry point to the program."
   [& args]
   (let [to-score (parse-args args)
         config (configure-recommender)
