@@ -5,6 +5,7 @@
             [parenskit (vector :as lkv) (core :as lkc)]
             [esfj.provider :refer [defprovider]])
   (:import [java.util Collection Map Set]
+           [clojure.lang IDeref]
            [com.google.common.collect Maps Sets]
            [org.grouplens.lenskit ItemScorer]
            [org.grouplens.lenskit.data.dao EventDAO ItemDAO UserDAO]
@@ -30,22 +31,42 @@
 
 (defn mean-center
   "Mean-center vector `v`."
-  ^SparseVector [^SparseVector v]
-  (-> v lkv/mvec (lkv/-! (.mean v)) lkv/freeze!))
+  [^SparseVector v]
+  (let [mean (.mean v)]
+    [mean (-> v lkv/mvec (lkv/-! mean) lkv/freeze!)]))
+
+(definterface UUPrecalc)
+
+(defprovider uu-precalc
+  ^UUPrecalc [^UserDAO udao, ^UserEventDAO uedao]
+  (let [data (->> (.getUserIds udao)
+                  (map #(mean-center (get-uvec uedao %)))
+                  (zipmap (.getUserIds udao)))]
+    (reify UUPrecalc IDeref (deref [_] data))))
+
+(defn precalc-uvec
+  [precalc user]
+  (or (get @precalc user)
+      [0.0 (RatingVectorUserHistorySummarizer/makeRatingVector
+            (History/forUser user))]))
+
+;;
+;; The following function is the actual item-scorer implementation.
+;;
 
 (defprovider suu-item-scorer
   "Simple user-user item score implementation."
-  ^ItemScorer [^UserEventDAO udao ^ItemEventDAO idao]
+  ^ItemScorer [^UserEventDAO udao, ^ItemEventDAO idao, ^UUPrecalc precalc]
   (lkc/item-scorer
    (fn score [^long user ^MutableSparseVector scores]
-     (let [uvec (get-uvec udao user), umean (.mean ^SparseVector uvec),
-           uvec (mean-center uvec), vs (CosineVectorSimilarity.)]
+     (let [[umean uvec] (precalc-uvec precalc user),
+           vs (CosineVectorSimilarity.)]
        (lkv/map-keys!
         (fn [^long item]
           (->> (.getUsersForItem idao item)
                (remove (partial = user))
                (map (fn [^long user']
-                      (let [uvec' (mean-center (get-uvec udao user'))
+                      (let [[_ uvec'] (precalc-uvec precalc user')
                             sim (.similarity vs uvec uvec')]
                         [sim uvec'])))
                (sort-by first >)
@@ -68,7 +89,8 @@
     (-> (.set TitleFile) (.to (io/file "data/movie-titles.csv")))
     (-> (.bind UserDAO) (.to MOOCUserDAO))
     (-> (.set UserFile) (.to (io/file "data/users.csv")))
-    (-> (.bind ItemScorer) (.toProvider suu-item-scorer))))
+    (-> (.bind ItemScorer) (.toProvider suu-item-scorer))
+    (-> (.bind UUPrecalc) (.toProvider uu-precalc))))
 
 (defn parse-args
   "Parse the command-line arguments in sequence `args`.  Use Java collections
